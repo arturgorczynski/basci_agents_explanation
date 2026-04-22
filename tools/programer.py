@@ -1,67 +1,78 @@
-def write_python_code(code, filename='generated_script.py'):
+import os
+import subprocess
+import sys
+
+from runtime.contracts import ToolResult
+
+
+def write_python_code(code, filename="generated_script.py"):
     """
     Writes the provided code into a Python file.
 
     Parameters:
-    code (str): The code to write into the file.
-    filename (str): The name of the file to create. Default is 'generated_script.py'.
+        code (str): The code to write into the file.
+        filename (str): Name of the file to create. Default is `generated_script.py`.
 
     Returns:
-    str: A message indicating that the file has been created.
+        ToolResult:
+            - data (str): Filename that was written.
+            - summary (str): Short explanation of the write result.
+            - error (str | None): Failure reason if the file could not be written.
     """
-    # Ensure that escape sequences (like \n) are properly interpreted
-    code = code.encode().decode('unicode_escape')
-    
-    with open(filename, 'w', encoding='utf-8') as file:
-        file.write(code)
-    
-    print(f"Code has been written to {filename}")
+    decoded_code = code.encode().decode("unicode_escape")
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write(decoded_code)
 
+    return ToolResult.ok(
+        data=filename,
+        summary=f"Wrote Python code to '{filename}'.",
+    )
 
 
 def run_python_script(filename):
     """
-    Executes a Python script specified by the filename using the Python executable from a local .venv if it exists.
+    Executes a Python script specified by the filename using the Python executable
+    from a local `.venv` if it exists.
 
     Parameters:
-    filename (str): The path to the Python script file to execute.
+        filename (str): Path to the Python script file to execute.
 
     Returns:
-    int: The exit code of the executed script. Zero indicates success.
+        ToolResult:
+            - data (dict): Includes return code and captured stdout/stderr when available.
+            - summary (str): Short explanation of the execution result.
+            - error (str | None): Failure reason if the file does not exist or execution fails.
     """
-    import subprocess
-    import os
-
-    print(f'>>>>>> EXECUTING {filename} <<<<<<<')
-    
-    # Check if the file exists
     if not os.path.isfile(filename):
-        print(f"Error: The file '{filename}' does not exist.")
-        return -1
+        return ToolResult.failure(
+            f"The file '{filename}' does not exist.",
+            summary=f"Could not execute '{filename}'.",
+        )
+
+    script_path = os.path.abspath(filename)
+    venv_python = os.path.join(".venv", "bin", "python")
+    if not os.path.exists(venv_python):
+        venv_python = os.path.join(".venv", "Scripts", "python.exe")
+
+    python_executable = venv_python if os.path.exists(venv_python) else sys.executable
+    command = [os.path.abspath(python_executable), script_path]
 
     try:
-        # Get the absolute path of the script
-        script_path = os.path.abspath(filename)
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        output = result.stdout.strip()
+        return ToolResult.ok(
+            data={"returncode": result.returncode, "stdout": output},
+            summary=f"Executed Python script '{filename}'.",
+        )
+    except subprocess.CalledProcessError as exc:
+        return ToolResult.failure(
+            f"Script '{filename}' failed with return code {exc.returncode}: {exc.stderr}",
+            data={"returncode": exc.returncode, "stdout": exc.stdout, "stderr": exc.stderr},
+            summary=f"Execution failed for '{filename}'.",
+        )
 
-        # Check if there is a local .venv directory
-        venv_python = os.path.join('.venv', 'bin', 'python')  # For Linux/macOS
-        if not os.path.exists(venv_python):  # Check for Windows paths
-            venv_python = os.path.join('.venv', 'Scripts', 'python.exe')
 
-        # Use the .venv Python executable if it exists, otherwise default to system Python
-        python_executable = venv_python if os.path.exists(venv_python) else os.path.abspath(sys.executable)
-
-        command = [python_executable, script_path]
-
-        result = subprocess.run(command, check=True)
-
-        print(f"Script '{filename}' executed successfully.")
-        return result.returncode
-
-    except subprocess.CalledProcessError as e:
-        print(f"An error occurred while executing '{filename}': {e}")
-        return e.returncode
-
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        return -1
+TOOLS = {
+    "write_python_code": write_python_code,
+    "run_python_script": run_python_script,
+}

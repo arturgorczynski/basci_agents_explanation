@@ -1,6 +1,7 @@
 import json
 from typing import Any, Dict, List, Union
 
+
 class Memory:
 
     def __init__(self, is_structured: bool = True, has_history: str = None):
@@ -14,7 +15,9 @@ class Memory:
                     self.memory = data
                 else:
                     print('Loaded data does not match the expected memory structure.')
-            except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+            except FileNotFoundError:
+                self.memory = []
+            except (json.JSONDecodeError, ValueError) as e:
                 print(f'Error reading history: {e}')
 
 
@@ -43,13 +46,21 @@ class Memory:
                 self.memory.append(new_memory)
         
 
+    def _format_entry(self, item: Any) -> str:
+        if self.is_structured and isinstance(item, dict):
+            return json.dumps(item, ensure_ascii=False, default=str)
+        return str(item)
+
     def recall_last_actions(self, steps: int = 10) -> str:
-        if self.is_structured:
-            formatted_memory = '\n'.join(str(item) for item in self.memory[-steps:])
-        else:
-            formatted_memory = '\n'.join(str(item) for item in self.memory[-steps:])
-        return formatted_memory
-    
+        return '\n'.join(self._format_entry(item) for item in self.memory[-steps:])
+
+    def recall_all(self) -> str:
+        return self.recall_last_actions(len(self.memory) or 1)
+
+    def recall_raw(self, steps: int | None = None) -> list[Any]:
+        if steps is None:
+            return list(self.memory)
+        return list(self.memory[-steps:])
 
     def save_history(self, file_path: str) -> None:
         """Save the current memory to a specified location in either JSON or TXT format."""
@@ -60,7 +71,7 @@ class Memory:
 
             elif file_path.endswith('.txt'):
                 with open(file_path, 'w', encoding='utf-8') as file:
-                    file.write('\n'.join(str(item) for item in self.memory) + '\n')
+                    file.write('\n'.join(self._format_entry(item) for item in self.memory) + '\n')
             else:
                 raise ValueError("Unsupported file type. Please use .json or .txt")
 

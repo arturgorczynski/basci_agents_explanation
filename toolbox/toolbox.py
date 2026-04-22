@@ -1,48 +1,51 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from inspect import Signature, signature
+from typing import Callable
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    func: Callable
+    signature: Signature
+    description: str
+
+    @property
+    def prompt_description(self) -> str:
+        return f"{self.name}{self.signature}: {self.description}"
+
 
 class ToolBox:
     def __init__(self):
-        self.tools_dict = {}
+        self.tools_dict: dict[str, ToolSpec] = {}
 
-    def store(self, functions_list):
+    def store(self, functions_list: dict[str, Callable]) -> dict[str, ToolSpec]:
         """
-        Stores the literal name and docstring of each function in the list.
+        Store tool metadata for each supported callable.
 
         Parameters:
-        functions_list (list): List of function objects to store.
+        functions_list (dict): Mapping of tool names to callable objects.
 
         Returns:
-        dict: Dictionary with function names as keys and their docstrings as values.
+        dict: Dictionary with function names as keys and tool specs as values.
         """
-        for func in functions_list:
-            self.tools_dict[func.__name__] = func.__doc__
+        for name, func in functions_list.items():
+            description = (func.__doc__ or "").strip().replace("\n", " ")
+            self.tools_dict[name] = ToolSpec(
+                name=name,
+                func=func,
+                signature=signature(func),
+                description=description,
+            )
         return self.tools_dict
 
-    def tools(self):
+    def tools(self) -> str:
         """
-        Returns the dictionary created in store as a text string.
-
-        Returns:
-        str: Dictionary of stored functions and their docstrings as a text string.
+        Return stored tool descriptions formatted for prompts.
         """
-        tools_str = ""
-        for name, doc in self.tools_dict.items():
-            tools_str += f"{name}: \"{doc}\"\n"
-        return tools_str.strip()
-    
+        return "\n".join(spec.prompt_description for spec in self.tools_dict.values()).strip()
 
-    def execute_function(self, function_name, *args, **kwargs):
-        """
-        Executes a function by name if it exists in the tools_dict.
-
-        Parameters:
-        function_name (str): The name of the function to execute.
-        args, kwargs: Arguments to pass to the function.
-
-        Returns:
-        The result of the function execution, or an error message if not found.
-        """
-        if function_name in self.tools_dict:
-            func = self.tools_dict[function_name]
-            return func(*args, **kwargs)
-        else:
-            return f"Function '{function_name}' not found in toolbox."
+    def get(self, function_name: str) -> ToolSpec | None:
+        return self.tools_dict.get(function_name)

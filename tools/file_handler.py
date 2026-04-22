@@ -1,10 +1,14 @@
 from datetime import datetime
+import json
 import os
 from pathlib import Path
-from typing import Iterable
-import pandas as pd
-import glob
-import json
+
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover - optional dependency fallback
+    pd = None
+
+from runtime.contracts import ToolResult
 
 
 def check_if_file_exists(filename):
@@ -14,143 +18,191 @@ def check_if_file_exists(filename):
     USE ONLY IF FILENAME PROVIDED
 
     Parameters:
-    filename (str): The name of the file to search for.
+        filename (str): The name of the file to search for.
 
     Returns:
-    str: The full path to the file if found, or a 'file not found' message if the file does not exist.
+        ToolResult:
+            - data (str): Full path to the file if found.
+            - summary (str): Short explanation of the search result.
+            - error (str | None): Failure reason if the file does not exist.
     """
-    # Get the current working directory
     current_directory = os.getcwd()
-    
-    # Walk through the current directory and all subdirectories
-    for dirpath, dirnames, filenames in os.walk(current_directory):
+    for dirpath, _, filenames in os.walk(current_directory):
         if filename in filenames:
-            return os.path.join(dirpath, filename)
+            full_path = os.path.join(dirpath, filename)
+            return ToolResult.ok(
+                data=full_path,
+                summary=f"Found file '{filename}' at '{full_path}'.",
+            )
 
-    # If file is not found, return a not found message
-    return f"File '{filename}' not found in the current directory or any child directories."
+    return ToolResult.failure(
+        f"File '{filename}' not found in the current directory or child directories.",
+        summary=f"Could not find file '{filename}'.",
+    )
 
 
-def search_files(pattern: str, root: str | Path | None = None) -> list[str]:
+def search_files(pattern: str, root: str | Path | None = None) -> ToolResult:
     """
-    Return every file matching *pattern* starting at *root* (default: the directory
-    that contains this source file) and recursing through all sub‑directories.
+    Return every file matching *pattern* starting at *root* and recurse through
+    all child directories.
 
-    Parameters
-    ----------
-    pattern : str
-        A Unix‑style glob such as '*.txt' or 'A*.py'.
-    root : str | pathlib.Path | None, optional
-        The directory to start from.  If omitted, the directory that holds
-        this module is used.
-
-    Returns
-    -------
-    list[str]
-        Absolute paths of all matching files.
-    """
-    root_path = Path(root).resolve() if root else Path(__file__).resolve().parent
-    return [str(p) for p in root_path.rglob(pattern)]
-
-def text_writer(message=None, filename='results.txt'):
-    """
-    Write or append a message to a text file. If no message is provided, a default message will be used.
-    
     Parameters:
-    filename (str): The name of the text file. If none then default - results.txt will be used.
-    message (str): The message to be written or appended. If None, file will not be written
-    
+        pattern (str): A Unix-style glob such as '*.txt' or 'A*.py'.
+        root (str | pathlib.Path | None): Directory to start from. If omitted,
+            current working directory is used.
+
     Returns:
-    None
+        ToolResult:
+            - data (list[str]): Absolute paths of all matching files.
+            - summary (str): Short explanation of how many matches were found.
+            - error (str | None): Present only if the search fails unexpectedly.
+    """
+    root_path = Path(root).resolve() if root else Path.cwd()
+    matches = [str(path) for path in root_path.rglob(pattern)]
+    return ToolResult.ok(
+        data=matches,
+        summary=f"Found {len(matches)} file(s) matching pattern '{pattern}'.",
+    )
+
+
+def text_writer(message=None, filename="results.txt"):
+    """
+    Write or append a message to a text file. If no message is provided,
+    file will not be written.
+
+    Parameters:
+        filename (str): Name of the text file. If omitted then `results.txt` is used.
+        message (str): Message to be written or appended.
+
+    Returns:
+        ToolResult:
+            - data (str): Filename that was written to.
+            - summary (str): Short explanation whether file was created or appended.
+            - error (str | None): Failure reason when no message is provided.
     """
     if message is None:
-        return None
+        return ToolResult.failure(
+            "No message was provided to write.",
+            summary="Skipped writing because no message was provided.",
+        )
 
-    # Get the current date and time
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Prepare the message to write/append
     message_to_write = f"{current_time} - {message}\n"
+    file_exists = os.path.exists(filename)
+    mode = "a" if file_exists else "w"
 
-    # Check if the file already exists
-    if os.path.exists(filename):
-        # Append the message if the file exists
-        with open(filename, 'a', encoding='utf-8') as file:
-            file.write(message_to_write)
-    else:
-        # Create a new file and write the message
-        with open(filename, 'w', encoding='utf-8') as file:
-            file.write(message_to_write)
+    with open(filename, mode, encoding="utf-8") as file:
+        file.write(message_to_write)
 
-    print(f"Message has been {'appended to' if os.path.exists(filename) else 'written to'} the file: {filename}")
+    action = "Appended" if file_exists else "Created"
+    return ToolResult.ok(
+        data=filename,
+        summary=f"{action} text file '{filename}'.",
+    )
 
 
-def read_text(filename='results.txt'):
+def read_text(filename="results.txt"):
     """
     Read and return content of a text file.
 
     Parameters:
-    filename (str): The name of the text file to read. Defaults to 'results.txt'.
+        filename (str): Name of the text file to read. Defaults to `results.txt`.
 
     Returns:
-    str: The contents of the file as a string. If the file does not exist, returns None.
+        ToolResult:
+            - data (str): Contents of the file as a string.
+            - summary (str): Short explanation of the read result.
+            - error (str | None): Failure reason if the file does not exist.
     """
     if not os.path.exists(filename):
-        print(f"The file '{filename}' does not exist.")
-        return None
+        return ToolResult.failure(
+            f"The file '{filename}' does not exist.",
+            summary=f"Could not read text file '{filename}'.",
+        )
 
-    # Read the contents of the file
-    with open(filename, 'r', encoding='utf-8') as file:
+    with open(filename, "r", encoding="utf-8") as file:
         contents = file.read()
 
-    print(f"Contents of the file '{filename}' have been read successfully.")
-    return contents
+    return ToolResult.ok(
+        data=contents,
+        summary=f"Read text file '{filename}'.",
+    )
 
 
-
-def csv_reader(filepath='data.csv', **kwargs):
+def csv_reader(filepath="data.csv", **kwargs):
     """
-    Read a CSV file into a Pandas DataFrame. Additional parameters can be passed to handle
-    specific needs like custom delimiters, missing values, or column types.
+    Read a CSV file into a Pandas DataFrame. Additional parameters can be passed
+    to handle custom delimiters, missing values, or column types.
     Use only if file name and its location are known.
-    
+
     Parameters:
-    filepath (str): The path to the CSV file. Defaults to 'data.csv'.
-    **kwargs: Additional keyword arguments to be passed to pandas.read_csv() function.
-    
+        filepath (str): Path to the CSV file. Defaults to `data.csv`.
+        **kwargs: Additional keyword arguments forwarded to `pandas.read_csv()`.
+
     Returns:
-    pd.DataFrame: The content of the CSV file as a Pandas DataFrame. If the file does not exist,
-                  prints an error message and returns None.
+        ToolResult:
+            - data (pd.DataFrame): The content of the CSV file as a DataFrame.
+            - summary (str): Short explanation of the read result.
+            - error (str | None): Failure reason if file is missing, pandas is unavailable,
+              or parsing fails.
     """
+    if pd is None:
+        return ToolResult.failure(
+            "pandas package is required to read CSV files.",
+            summary="Could not read CSV because pandas is not installed.",
+        )
+
     try:
-        # Attempt to read the CSV file using the provided arguments
-        df = pd.read_csv(filepath, **kwargs)
-        print(f"CSV file '{filepath}' has been read successfully into a DataFrame.")
-        return df
+        dataframe = pd.read_csv(filepath, **kwargs)
+        return ToolResult.ok(
+            data=dataframe,
+            summary=f"Read CSV file '{filepath}'.",
+        )
     except FileNotFoundError:
-        print(f"The file '{filepath}' does not exist.")
-        return None
-    except Exception as e:
-        print(f"An error occurred while reading the file: {e}")
-        return None
-    
-def read_json(filename='data.json'):
+        return ToolResult.failure(
+            f"The file '{filepath}' does not exist.",
+            summary=f"Could not read CSV file '{filepath}'.",
+        )
+    except Exception as exc:
+        return ToolResult.failure(
+            f"An error occurred while reading '{filepath}': {exc}",
+            summary=f"CSV read failed for '{filepath}'.",
+        )
+
+
+def read_json(filename="data.json"):
     """
     Read and return content of a JSON file as a dictionary.
 
     Parameters:
-    filename (str): The name of the JSON file to read. Defaults to 'data.json'.
+        filename (str): Name of the JSON file to read. Defaults to `data.json`.
 
     Returns:
-    dict: The contents of the JSON file as a dictionary. If the file does not exist, returns None.
+        ToolResult:
+            - data (dict): Parsed JSON content.
+            - summary (str): Short explanation of the read result.
+            - error (str | None): Failure reason if the file does not exist.
     """
     if not os.path.exists(filename):
-        print(f"The file '{filename}' does not exist.")
-        return None
+        return ToolResult.failure(
+            f"The file '{filename}' does not exist.",
+            summary=f"Could not read JSON file '{filename}'.",
+        )
 
-    # Read and parse the JSON file
-    with open(filename, 'r', encoding='utf-8') as file:
+    with open(filename, "r", encoding="utf-8") as file:
         contents = json.load(file)
 
-    print(f"Contents of the file '{filename}' have been read successfully.")
-    return contents
+    return ToolResult.ok(
+        data=contents,
+        summary=f"Read JSON file '{filename}'.",
+    )
+
+
+TOOLS = {
+    "check_if_file_exists": check_if_file_exists,
+    "search_files": search_files,
+    "text_writer": text_writer,
+    "read_text": read_text,
+    "csv_reader": csv_reader,
+    "read_json": read_json,
+}

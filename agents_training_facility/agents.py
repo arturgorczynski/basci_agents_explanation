@@ -1,84 +1,94 @@
-from termcolor import colored
-import os
-import inspect
-import json
-from typing import List
-from memory.memory_manager import Memory
+from __future__ import annotations
+
 from datetime import datetime
+import json
+import os
+from typing import Callable, List
 
-current_time = datetime.now()
-formatted_time = current_time.strftime('%d-%m-%Y %H:%M')
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional dependency fallback
+    def load_dotenv():
+        return None
 
-from dotenv import load_dotenv
-from openai import AzureOpenAI, OpenAI
+try:
+    from openai import AzureOpenAI, OpenAI
+except ImportError:  # pragma: no cover - optional dependency fallback
+    AzureOpenAI = None
+    OpenAI = None
 
-#from collections import deque
-#from tools.file_handler import text_writer, text_reader, csv_reader
-#from tools.utils_handler import reverse_string, talk, check_or_create_path, write_python_code, run_python_script
+try:
+    from termcolor import colored
+except ImportError:  # pragma: no cover - optional dependency fallback
+    def colored(text, _color=None):
+        return text
 
-from prompts.prompts import agent_choose_tool_system 
+from memory.memory_manager import Memory
+from prompts.prompts import (
+    agent_choose_tool_system,
+    agent_choose_tool_user,
+    plan_next_step_system,
+    plan_next_step_user,
+    synthesis_system,
+    synthesis_user,
+)
+from runtime.contracts import ToolResult, validate_planner_action, validate_worker_action
 from toolbox.toolbox import ToolBox
-from tools import brain, common, file_handler, programer, utils_handler, apis
+from tools import apis, brain, common, file_handler, programer, utils_handler
 
 load_dotenv()
 
 available_tools = {
-    'brain': brain,
-    'apis': apis,
-    'common': common,
-    'file_handler': file_handler,
-    'programer': programer,
-    'utils_handler': utils_handler,
-
+    "brain": brain,
+    "apis": apis,
+    "common": common,
+    "file_handler": file_handler,
+    "programer": programer,
+    "utils_handler": utils_handler,
 }
 
+TOKEN_USAGE_PATH = "memory/execution_cost/token_usage.json"
+
+
 class Agent:
-    # Class-level dictionary to store agents and their missions
     agent_registry = {}
-    
-    token_usage = Memory(is_structured=False)
+    token_usage = Memory(is_structured=True, has_history=TOKEN_USAGE_PATH)
 
-    def __init__(self, name, module_list: List[str], agent_mission: str, agent_personality: str ):
-        """
-        Initializes the agent with a list of tools and a mission.
-
-        Parameters:
-        tools (list): List of tool functions available for agent to use.
-        agent_mission (str): The mission assigned to the agent.
-        """
+    def __init__(
+        self,
+        name: str,
+        module_list: List[str],
+        agent_mission: str,
+        agent_personality: str,
+    ):
         self.name = name
-        self.module_list = module_list  # Store the tool names
-        self.toolbox = ToolBox() 
-        self.available_functions = []
-        self.active_abilities =  self.get_function_dict()
+        self.module_list = module_list
+        self.toolbox = ToolBox()
+        self.available_functions: list[str] = []
         self.agent_personality = agent_personality
-
         self.field_agent = True
         self.agent_mission = agent_mission
         self.model_provider, self.model = self._load_model_settings()
-
-        # Retrieve the variable name of the instance
         self.client = self._gpt_client()
 
-        ## dynamically build toolset for an agent
-        selected_functions = []
+        selected_functions: dict[str, object] = {}
         for tool_name in module_list:
-            if tool_name in available_tools:
-                # Add all callable functions from the tool module
-                module = available_tools[tool_name]
-                module_functions = [func for func in vars(module).values() if callable(func)]
-                selected_functions += module_functions
-                
-                # Store only the function names in available_functions
-                self.available_functions += [func.__name__ for func in module_functions]
-        
-        # Store the selected functions in the toolbox
-        self.toolbox.store(selected_functions)
-        
-        # Add the agent and its mission to the registry
-        Agent.agent_registry[self.name] = {'mission':self.agent_mission, 'tools to use': (', ').join(self.available_functions), 'field_agent':self.field_agent}  # Fixed the incorrect attribute name
+            if tool_name not in available_tools:
+                continue
+            module = available_tools[tool_name]
+            module_functions = getattr(module, "TOOLS", {})
+            selected_functions.update(module_functions)
+            self.available_functions.extend(module_functions.keys())
 
-    def _get_required_env(self, env_name):
+        self.toolbox.store(selected_functions)
+
+        Agent.agent_registry[self.name] = {
+            "mission": self.agent_mission,
+            "tools to use": ", ".join(self.available_functions),
+            "field_agent": self.field_agent,
+        }
+
+    def _get_required_env(self, env_name: str) -> str:
         env_value = os.getenv(env_name)
         if env_value:
             return env_value
@@ -98,10 +108,11 @@ class Agent:
 
     def _gpt_client(self):
         if self.model_provider == "azure":
+            if AzureOpenAI is None:
+                raise ImportError("openai package is required for Azure model provider.")
             api_key = self._get_required_env("AZURE_OPENAI_API_KEY")
             azure_endpoint = self._get_required_env("AZURE_OPENAI_ENDPOINT")
             api_version = self._get_required_env("AZURE_OPENAI_API_VERSION")
-
             return AzureOpenAI(
                 api_key=api_key,
                 azure_endpoint=azure_endpoint,
@@ -110,13 +121,11 @@ class Agent:
 
         ollama_base_url = self._get_required_env("OLLAMA_BASE_URL")
         ollama_api_key = self._get_required_env("OLLAMA_API_KEY")
+        if OpenAI is None:
+            raise ImportError("openai package is required for Ollama model provider.")
+        return OpenAI(base_url=ollama_base_url, api_key=ollama_api_key)
 
-        return OpenAI(
-            base_url=ollama_base_url,
-            api_key=ollama_api_key,
-        )
-
-    def _parse_json_response(self, model_content):
+    def _parse_json_response(self, model_content: str):
         cleaned_content = model_content.strip()
         if cleaned_content.startswith("```"):
             cleaned_content = cleaned_content.strip("`")
@@ -126,133 +135,273 @@ class Agent:
         try:
             return json.loads(cleaned_content)
         except json.JSONDecodeError:
-            json_start = cleaned_content.find("{")
-            json_end = cleaned_content.rfind("}")
-            if json_start != -1 and json_end != -1 and json_end > json_start:
-                return json.loads(cleaned_content[json_start:json_end + 1])
+            extracted_json = self._extract_balanced_json_object(cleaned_content)
+            if extracted_json is not None:
+                return json.loads(extracted_json)
             raise
-    
-    
-    def _ask_agent(self, system_prompt, prompt='', return_json=False):
-        messages = [{"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}]
-        # Modify request based on whether JSON output is requested
-        request_params = {
+
+    def _extract_balanced_json_object(self, text: str) -> str | None:
+        start_index = text.find("{")
+        if start_index == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escape_next = False
+
+        for index in range(start_index, len(text)):
+            character = text[index]
+
+            if escape_next:
+                escape_next = False
+                continue
+
+            if character == "\\" and in_string:
+                escape_next = True
+                continue
+
+            if character == '"':
+                in_string = not in_string
+                continue
+
+            if in_string:
+                continue
+
+            if character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start_index : index + 1]
+
+        return None
+
+    def _request_json_repair(
+        self,
+        system_prompt: str,
+        prompt: str,
+        invalid_response: str,
+        error_message: str,
+    ):
+        repair_system_prompt = (
+            f"{system_prompt}\n"
+            "Your previous response could not be accepted. "
+            "Return only one valid JSON object that matches the requested schema exactly."
+        )
+        repair_prompt = (
+            f"{prompt}\n\n"
+            "Problem detected:\n"
+            f"{error_message}\n\n"
+            "Previous invalid response:\n"
+            f"{invalid_response}\n\n"
+            "Repair it and return only valid JSON."
+        )
+        repair_messages = [
+            {"role": "system", "content": repair_system_prompt},
+            {"role": "user", "content": repair_prompt},
+        ]
+        repair_request_params = {"model": self.model, "messages": repair_messages}
+
+        if self.model_provider == "azure":
+            repair_request_params["response_format"] = {"type": "json_object"}
+
+        repair_response = self.client.chat.completions.create(**repair_request_params)
+        repaired_content = repair_response.choices[0].message.content
+        return self._parse_json_response(repaired_content), repair_response
+
+    def _record_model_response(
+        self,
+        response,
+        *,
+        model_response=None,
+        status: str = "ok",
+        error: str | None = None,
+        raw_response: str | None = None,
+    ) -> None:
+        usage = getattr(response, "usage", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        formatted_time = datetime.now().isoformat(timespec="seconds")
+        model_data = {
+            "timestamp": formatted_time,
+            "agent": self.name,
+            "model_provider": self.model_provider,
             "model": self.model,
-            "messages": messages}
+            "status": status,
+            "response": model_response,
+            "raw_response": raw_response,
+            "error": error,
+            "completion_tokens": completion_tokens,
+            "prompt_tokens": prompt_tokens,
+        }
+        self.token_usage.extend_memory(model_data)
+        self.token_usage.save_history(TOKEN_USAGE_PATH)
+
+    def _ask_agent(
+        self,
+        system_prompt,
+        prompt="",
+        return_json=False,
+        validator: Callable[[dict], dict] | None = None,
+    ):
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+        request_params = {"model": self.model, "messages": messages}
 
         if return_json:
             if self.model_provider == "azure":
-                request_params['response_format']= {"type":'json_object'}
+                request_params["response_format"] = {"type": "json_object"}
             else:
-                messages[0]["content"] += "\nReturn only a valid JSON object with no markdown fences."
+                messages[0]["content"] += (
+                    "\nReturn only a valid JSON object with no markdown fences."
+                )
 
         response = self.client.chat.completions.create(**request_params)
 
         if return_json:
-            model_response = self._parse_json_response(response.choices[0].message.content)
-        else: 
+            raw_content = response.choices[0].message.content
+            try:
+                model_response = self._parse_json_response(raw_content)
+                if validator is not None:
+                    model_response = validator(model_response)
+            except (json.JSONDecodeError, ValueError) as exc:
+                self._record_model_response(
+                    response,
+                    status="invalid_json_response",
+                    error=str(exc),
+                    raw_response=raw_content,
+                )
+                repaired_json, response = self._request_json_repair(
+                    system_prompt,
+                    prompt,
+                    raw_content,
+                    str(exc),
+                )
+                repair_raw_content = response.choices[0].message.content
+                try:
+                    model_response = repaired_json
+                    if validator is not None:
+                        model_response = validator(model_response)
+                except ValueError as exc:
+                    self._record_model_response(
+                        response,
+                        status="invalid_json_repair",
+                        error=str(exc),
+                        raw_response=repair_raw_content,
+                    )
+                    raise ValueError(
+                        f"{self.name} returned invalid JSON after repair attempt: {exc}"
+                    ) from exc
+        else:
             model_response = response.choices[0].message.content
 
-        # Extract token usage from the response
-        usage = getattr(response, "usage", None)
-        completion_tokens = getattr(usage, "completion_tokens", None)
-        prompt_tokens = getattr(usage, "prompt_tokens", None)
-        
-        # Save info about usage as list = time, request, output_tokens, input_tokens
-        model_data = [formatted_time, model_response, completion_tokens, prompt_tokens]
-
-
-        self.token_usage.extend_memory([model_data])
-        
-        self.token_usage.save_history("memory/execution_cost/token_usage.txt")
+        self._record_model_response(response, model_response=model_response)
         return model_response
-   
-    def get_function_dict(self):
-        modules = self.module_list
 
-        function_to_module_mapping = {}
+    def think(self, manager_instruction: str, execution_history: str, user_request: str):
+        return self.think_in_session(
+            manager_instruction=manager_instruction,
+            execution_history=execution_history,
+            assignment_history="No assignment steps yet.",
+            user_request=user_request,
+            worker_step=1,
+            max_worker_steps=1,
+        )
 
-        # Loop through each module
-        for module_name in modules:
-            module = globals()[module_name]
-            functions = inspect.getmembers(module, inspect.isfunction)
-            
-            for func_name, func_obj in functions:
-                function_to_module_mapping[func_name] = module
+    def think_in_session(
+        self,
+        manager_instruction: str,
+        execution_history: str,
+        assignment_history: str,
+        user_request: str,
+        worker_step: int,
+        max_worker_steps: int,
+    ):
+        tool_descriptions = self.toolbox.tools() or "No tools available."
+        agent_system_prompt = agent_choose_tool_system.format(
+            agent_descriptions=self.agent_personality,
+            tool_descriptions=tool_descriptions,
+        )
+        prompt = agent_choose_tool_user.format(
+            manager_instruction=manager_instruction,
+            execution_step_history=execution_history,
+            assignment_history=assignment_history,
+            worker_step=f"{worker_step}/{max_worker_steps}",
+            original_request=user_request,
+        )
+        return self._ask_agent(
+            agent_system_prompt,
+            prompt,
+            return_json=True,
+            validator=validate_worker_action,
+        )
 
-        return function_to_module_mapping  
+    def execute_tool(self, agent_response_dict: dict) -> ToolResult:
+        tool_choice = agent_response_dict.get("tool")
+        tool_input = agent_response_dict.get("args", {})
+        tool_spec = self.toolbox.get(tool_choice)
 
+        if tool_spec is None:
+            return ToolResult.failure(f"Tool {tool_choice} not found in agent's toolbox.")
 
-    def think(self, prompt):
-        """
-        Runs the generate_text method on the model using the system prompt template and tool descriptions.
+        print(
+            colored(
+                f"| Tool Choice Step | Tool {tool_choice} : Arguments {tool_input}",
+                "light_magenta",
+            )
+        )
 
-        Parameters:
-        prompt (str): The user query to generate a response for.
+        try:
+            response = tool_spec.func(**tool_input)
+        except Exception as exc:
+            return ToolResult.failure(
+                error=f"Tool {tool_choice} failed with exception: {exc}",
+                summary=f"Tool {tool_choice} execution failed.",
+            )
 
-        Returns:
-        dict: The response from the model as a dictionary.
-        """
+        if isinstance(response, ToolResult):
+            return response
 
-        tool_descriptions = self.toolbox.tools()
-        agent_system_prompt = agent_choose_tool_system.format(agent_descriptions= self.agent_personality, tool_descriptions=tool_descriptions)
-
-        agent_response_dict = self._ask_agent(agent_system_prompt, prompt, return_json=True)
-
-        return agent_response_dict
-    
-    def execute_tool(self, agent_response_dict):
-        """
-        Executes the tool chosen by the agent with the provided input.
-
-        Parameters:
-        agent_response_dict (dict): A dictionary containing 'tool_choice' and 'tool_input'.
-        """
-        tool_choice = agent_response_dict.get("tool_choice")
-        tool_input = agent_response_dict.get("tool_input")
-
-        tool_found = False
-        for tool in self.toolbox.tools_dict:
-            if tool == tool_choice:
-                print(colored(f"| Tool Choice Step | Tool {tool_choice} : Arguments {tool_input}", 'light_magenta'))
-                tool_found = True
-                tool_func = getattr(self.active_abilities[tool_choice], tool_choice)
-                if isinstance(tool_input, dict):
-                    response = tool_func(**tool_input)
-                else:
-                    response = tool_func(tool_input)
-                return response
-
-        if not tool_found:
-            print(f"Tool {tool_choice} not found in agent's toolbox.")
-        return None
+        return ToolResult.ok(
+            data=response,
+            summary=f"Tool {tool_choice} executed successfully.",
+        )
 
 
 class CommandCentre(Agent):
-
-    def __init__(self, name, tools: list, agent_mission: str, agent_personality:str):
-        """
-        Initializes the CommandCentre with a list of tools and a mission, 
-        but does not add it to the agent registry.
-
-        Parameters:
-        tools (list): List of tool functions.
-        agent_mission (str): The mission assigned to the CommandCentre.
-        """
-        # Initialize the parent Agent class without adding to registry
+    def __init__(self, name, tools: list, agent_mission: str, agent_personality: str):
         super().__init__(name, tools, agent_mission, agent_personality)
-        
-        # Remove the entry from the agent registry if it exists
-        # if self.name in Agent.agent_registry:
-        #    del Agent.agent_registry[self.name]
 
-    def _get_agents_characteristics(self):
-        agents_list = """"""
-        for k,v in self.agent_registry.items():
-                agents_list += f"Agent name -- {k} -- Agent {k} || Mission {v['mission']} || Tools to used: {v['tools to use']} \n"
-        
+    def _get_agents_characteristics(self) -> str:
+        agents_list = ""
+        for name, values in self.agent_registry.items():
+            if name == self.name:
+                continue
+            agents_list += (
+                f"Agent name -- {name} -- Agent {name} || Mission {values['mission']} "
+                f"|| Tools to used: {values['tools to use']} \n"
+            )
         return agents_list
 
-    
-    #def decide_if_task_done
+    def plan_next_step(self, user_request: str, steps_executed: str) -> dict:
+        formatted_prompt = plan_next_step_user.format(
+            original_request=user_request,
+            steps_executed=steps_executed,
+            avaliable_agents=self._get_agents_characteristics(),
+        )
+        planner_response = self._ask_agent(
+            plan_next_step_system,
+            formatted_prompt,
+            return_json=True,
+            validator=validate_planner_action,
+        )
+        return planner_response
+
+    def synthesize_answer(self, user_request: str, steps_executed: str) -> str:
+        formatted_prompt = synthesis_user.format(
+            original_request=user_request,
+            steps_executed=steps_executed,
+        )
+        return self._ask_agent(synthesis_system, formatted_prompt)

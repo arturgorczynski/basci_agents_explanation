@@ -1,9 +1,20 @@
 import os
 
-import requests
-from dotenv import load_dotenv
+try:
+    import requests
+except ImportError:  # pragma: no cover - optional dependency fallback
+    requests = None
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional dependency fallback
+    def load_dotenv():
+        return None
+
+from runtime.contracts import ToolResult
 
 load_dotenv()
+
 
 def address_to_geolocation(address_details):
     """
@@ -13,49 +24,53 @@ def address_to_geolocation(address_details):
         address_details (str): Address details of location in question.
 
     Example Parameters To Pass:
-        Staszica 4/3, Kraków, Polska
+        Staszica 4/3, Krakow, Polska
 
     Returns:
-        dict: Dict that contains keys for longitude and latitude.
+        ToolResult:
+            - data (dict): Contains keys for `longitude` and `latitude` when successful.
+            - summary (str): Short explanation of what happened.
+            - error (str | None): Failure reason if geolocation could not be resolved.
     """
+    if requests is None:
+        return ToolResult.failure(
+            "requests package is required for geolocation lookups.",
+            summary="Could not resolve the address because HTTP dependencies are missing.",
+        )
+
+    access_key = os.getenv("POSITIONSTACK_API_KEY")
+    if not access_key:
+        return ToolResult.failure(
+            "Missing POSITIONSTACK_API_KEY in environment.",
+            summary="Could not resolve the address because the geolocation API key is missing.",
+        )
+
+    url = "http://api.positionstack.com/v1/forward"
+    params = {"access_key": access_key, "query": address_details}
+
     try:
-        access_key = os.getenv("POSITIONSTACK_API_KEY")
-        if not access_key:
-            raise ValueError(
-                "Missing POSITIONSTACK_API_KEY in environment. "
-                "It is required for address_to_geolocation."
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json().get("data", [])
+        if not data:
+            return ToolResult.failure(
+                "No geolocation data found for the given address.",
+                summary="The geolocation lookup returned no matches.",
             )
 
-        url = "http://api.positionstack.com/v1/forward"
-        
-        # Parameters including the API key and the query address
-        params = {
-            "access_key": access_key,
-            "query": address_details
+        location = {
+            "latitude": data[0]["latitude"],
+            "longitude": data[0]["longitude"],
         }
-        
-        # Sending the GET request to the API
-        response = requests.get(url, params=params)
-        
-        # Checking if the request was successful
-        if response.status_code == 200:
-            data = response.json()
-            if 'data' in data and data['data']:
-                lat = data['data'][0]['latitude']
-                lon = data['data'][0]['longitude']
-                return {'latitude': lat, 'longitude': lon}
-            else:
-                raise ValueError("No data found for the given address.")
-        else:
-            # If the status code is not 200, raise an exception with a detailed error message
-            response.raise_for_status()
-    except requests.RequestException as e:
-        # This captures exceptions raised by requests, including HTTPError, Timeout, etc.
-        raise Exception(f"API request failed: {e}")
-    except KeyError as e:
-        # This captures errors like missing 'data' or 'latitude'/'longitude' keys in the response
-        raise Exception(f"Data parsing error: Missing key {e}")
-
+        return ToolResult.ok(
+            data=location,
+            summary=f"Resolved address '{address_details}' to coordinates.",
+        )
+    except (requests.RequestException, KeyError) as exc:
+        return ToolResult.failure(
+            f"Geolocation request failed: {exc}",
+            summary="The geolocation request failed.",
+        )
 
 
 def get_weather_forecast(lat, lon):
@@ -64,48 +79,73 @@ def get_weather_forecast(lat, lon):
     Use only if Latitude and Longitude are known.
 
     Parameters:
-    lat (float): Latitude of the location.
-    lon (float): Longitude of the location.
+        lat (float): Latitude of the location.
+        lon (float): Longitude of the location.
 
     Example Parameters To Pass:
         50.070640, 19.933120
 
     Returns:
-    dict: Dictionary containing weather data and descriptive information for each metric.
+        ToolResult:
+            - data (dict): Weather data together with descriptive `_info` fields for each metric.
+            - summary (str): Short explanation of the request result.
+            - error (str | None): Failure reason if the API call or parsing fails.
     """
+    if requests is None:
+        return ToolResult.failure(
+            "requests package is required for weather lookups.",
+            summary="Could not fetch weather because HTTP dependencies are missing.",
+        )
+
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "current": [
+            "temperature_2m",
+            "relative_humidity_2m",
+            "apparent_temperature",
+            "is_day",
+            "precipitation",
+            "rain",
+            "cloud_cover",
+            "pressure_msl",
+            "wind_speed_10m",
+            "wind_direction_10m",
+            "wind_gusts_10m",
+        ],
+        "timezone": "Europe/Berlin",
+        "forecast_days": 1,
+    }
+
     try:
-        # Define the API URL and parameters
-        url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": lat,
-            "longitude": lon,
-            "current": ["temperature_2m", "relative_humidity_2m", "apparent_temperature", "is_day", "precipitation", "rain", "cloud_cover", "pressure_msl", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"],
-            "timezone": "Europe/Berlin",
-            "forecast_days": 1
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+        data = payload["current"]
+        desc = payload["current_units"]
+        desc["is_day"] = "1 for day, 0 for night"
+        desc = {f"{key}_info": value for key, value in desc.items()}
+        combined = {
+            key: value
+            for pair in zip(data.items(), desc.items())
+            for key, value in [
+                (pair[0][0], pair[0][1]),
+                (f"{pair[0][0]}_info", pair[1][1]),
+            ]
         }
-        
-        # Send the request to the weather API
-        response = requests.get(url, params=params)
-        
-        # Check if the request was successful
-        if response.status_code == 200:
-            # Extract weather data and descriptions from the response
-            data = response.json()['current']
-            desc = response.json()['current_units']
-            
-            # Modify descriptions as needed
-            desc['is_day'] = '1 for day, 0 for night'
-            desc = {k + '_info': v for k, v in desc.items()}
-            
-            # Combine data with descriptions
-            combined = {k: v for pair in zip(data.items(), desc.items()) for k, v in [(pair[0][0], pair[0][1]), (pair[0][0] + '_info', pair[1][1])]}
-            
-            return combined
-        else:
-            # Raise an error if the API call was unsuccessful
-            response.raise_for_status()
-    
-    except requests.RequestException as e:
-        raise Exception(f"API request failed: {e}")
-    except KeyError as e:
-        raise Exception(f"Data parsing error: Missing key {e}")
+        return ToolResult.ok(
+            data=combined,
+            summary=f"Retrieved weather forecast for lat={lat}, lon={lon}.",
+        )
+    except (requests.RequestException, KeyError) as exc:
+        return ToolResult.failure(
+            f"Weather request failed: {exc}",
+            summary="The weather request failed.",
+        )
+
+
+TOOLS = {
+    "address_to_geolocation": address_to_geolocation,
+    "get_weather_forecast": get_weather_forecast,
+}

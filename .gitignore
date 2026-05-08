@@ -1,4 +1,13 @@
 .venv/*
 .env
 
+__pycache__/
 */__pycache__/*
+*.pyc
+
+memory.txt
+src/agentic_system/memory/conversation_history.json
+src/agentic_system/memory/conversation_raw_events.json
+src/agentic_system/memory/execution_cost/token_usage.json
+src/agentic_system/memory/execution_cost/token_usage.txt
+src/agentic_system/memory/ui_traces/

@@ -51,12 +51,6 @@ class Memory:
             return json.dumps(item, ensure_ascii=False, default=str)
         return str(item)
 
-    def recall_last_actions(self, steps: int = 10) -> str:
-        return '\n'.join(self._format_entry(item) for item in self.memory[-steps:])
-
-    def recall_all(self) -> str:
-        return self.recall_last_actions(len(self.memory) or 1)
-
     def recall_raw(self, steps: int | None = None) -> list[Any]:
         if steps is None:
             return list(self.memory)

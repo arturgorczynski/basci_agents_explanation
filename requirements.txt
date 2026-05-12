@@ -9,6 +9,3 @@ numpy
 pandas
 matplotlib
 seaborn
-
-
-OOOOOOOOOOOOk I am from Kraków Wąwozowa 32b/1 there is json my_wardrobe with my wardrobe list. Read it and tell me what to wear. Rememeber I rather be cold than hot

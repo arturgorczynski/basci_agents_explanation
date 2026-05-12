@@ -6,6 +6,8 @@ __pycache__/
 *.pyc
 
 memory.txt
+src/agentic_system/coding_output/
+src/agentic_system/memory/venv_packages_cache.json
 src/agentic_system/memory/conversation_history.json
 src/agentic_system/memory/conversation_raw_events.json
 src/agentic_system/memory/execution_cost/token_usage.json

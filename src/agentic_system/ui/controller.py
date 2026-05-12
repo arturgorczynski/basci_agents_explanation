@@ -46,14 +46,6 @@ class SessionController:
             self.trace_sink = trace_sink_factory(self._on_trace_event)
 
     @property
-    def trace_path(self):
-        return getattr(self.trace_sink, "trace_path", None)
-
-    @property
-    def is_busy(self) -> bool:
-        return self.status in {"starting", "running"}
-
-    @property
     def is_waiting(self) -> bool:
         return self.status in {"awaiting_user_input", "completed_request"}
 

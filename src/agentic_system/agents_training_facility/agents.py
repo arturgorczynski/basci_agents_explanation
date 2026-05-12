@@ -30,12 +30,8 @@ from memory.memory_manager import Memory
 from prompts.prompts import (
     agent_choose_tool_system,
     agent_choose_tool_user,
-    history_window_summary_system,
-    history_window_summary_user,
     plan_next_step_system,
     plan_next_step_user,
-    request_summary_system,
-    request_summary_user,
     synthesis_system,
     synthesis_user,
 )
@@ -47,7 +43,7 @@ from runtime.contracts import (
 )
 from runtime.tracing import NullTraceSink, TraceSink
 from toolbox.toolbox import ToolBox
-from tools import apis, data_manager, file_handler, programer, utils_handler
+from tools import apis, data_manager, file_handler, programer
 
 load_dotenv()
 
@@ -56,7 +52,6 @@ available_tools = {
     "data_manager": data_manager,
     "file_handler": file_handler,
     "programer": programer,
-    "utils_handler": utils_handler,
 }
 
 _AGENTIC_ROOT = Path(__file__).resolve().parent.parent
@@ -681,38 +676,4 @@ class CommandCentre(Agent):
             self._manager_system_prompt(synthesis_system),
             formatted_prompt,
             phase="synthesis",
-        )
-
-    def summarize_completed_request(
-        self,
-        question: str,
-        clarifications: str,
-        steps_executed: str,
-        final_answer: str,
-    ) -> str:
-        formatted_prompt = request_summary_user.format(
-            question=question,
-            clarifications=clarifications,
-            steps_executed=steps_executed,
-            final_answer=final_answer,
-        )
-        return self._ask_agent(
-            self._manager_system_prompt(request_summary_system),
-            formatted_prompt,
-            phase="summary",
-        )
-
-    def summarize_history_window(
-        self,
-        previous_summary: str,
-        completed_requests: str,
-    ) -> str:
-        formatted_prompt = history_window_summary_user.format(
-            previous_summary=previous_summary or "No previous summary.",
-            completed_requests=completed_requests,
-        )
-        return self._ask_agent(
-            self._manager_system_prompt(history_window_summary_system),
-            formatted_prompt,
-            phase="history_summary",
         )

@@ -127,21 +127,6 @@ class ConversationHistory:
             return "No active request."
         return "\n\n".join(sections).strip()
 
-    def render_worker_visible_context(self) -> str:
-        return (
-            "Global execution history is hidden from workers. "
-            "Use MANAGER INSTRUCTION, USER REQUEST, and ASSIGNMENT HISTORY only."
-        )
-
-    def render_active_clarifications(self) -> str:
-        if self.active_request is None or not self.active_request["clarifications"]:
-            return "No clarifications."
-
-        return "\n".join(
-            f"Q: {item['question']} | A: {item['answer']}"
-            for item in self.active_request["clarifications"]
-        )
-
     def active_request_snapshot(self) -> dict[str, Any] | None:
         if self.active_request is None:
             return None
@@ -196,9 +181,6 @@ class ConversationHistory:
             "active_request": copy.deepcopy(self.active_request),
         }
 
-    def raw_events_snapshot(self) -> list[dict[str, Any]]:
-        return copy.deepcopy(self.raw_events)
-
     def save(self) -> None:
         self._write_json(self.normalized_path, self.snapshot())
         self._write_json(self.raw_path, self.raw_events)
@@ -211,11 +193,6 @@ class ConversationHistory:
             "SUMMARY": request.get("summary"),
             "FINAL_ANSWER": request.get("final_answer"),
         }
-
-    @classmethod
-    def format_summary_window(cls, requests: list[dict[str, Any]]) -> str:
-        payload = [cls._completed_request_context(request) for request in requests]
-        return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
     @staticmethod
     def _event_to_manager_records(event: dict[str, Any]) -> list[dict[str, Any]]:

@@ -1,16 +1,12 @@
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "agentic_system"))
 
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    def load_dotenv():
-        return None
-
 load_dotenv()
 
+## Helps with encoding issues when printing polish chars
 try:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
@@ -18,15 +14,7 @@ except AttributeError:
     pass
 
 
-def _enforce_project_venv() -> None:
-    from tools.path_policy import validate_runtime_interpreter
-    is_valid, message = validate_runtime_interpreter()
-    if not is_valid:
-        raise RuntimeError(message)
-
-
 def main() -> None:
-    _enforce_project_venv()
     from runtime import build_default_runtime
     build_default_runtime().run()
 

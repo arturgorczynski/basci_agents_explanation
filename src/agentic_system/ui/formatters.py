@@ -5,7 +5,7 @@ import html
 import json
 from typing import Any
 
-MODEL_EVENT_TYPES = {"model_call", "model_repair_call"}
+MODEL_EVENT_TYPES = {"model_call"}
 HIDDEN_TRACE_EVENT_TYPES = {"session_start", "planner_iteration_start", "delegation_start", "synthesis_start"}
 GRAPH_EVENT_TYPES = {
     "user_request",
@@ -93,10 +93,6 @@ def _event_label(event: dict) -> str:
     payload = event.get("payload", {})
     if event_type == "model_call" and payload.get("status") == "invalid_json_response":
         return "Invalid JSON"
-    if event_type == "model_repair_call" and payload.get("status") == "invalid_json_repair":
-        return "Repair Failed"
-    if event_type == "model_repair_call":
-        return "Repair Attempt"
     labels = {
         "model_call": "LLM Call",
         "planner_iteration_start": "Planner Iteration",
@@ -214,8 +210,6 @@ def _action_detail(event: dict) -> str:
 
     if event_type == "model_call":
         return str(payload.get("model") or payload.get("model_provider") or "")
-    if event_type == "model_repair_call":
-        return str(payload.get("repair_for") or "JSON repair")
     if event_type == "worker_done":
         return f"{payload.get('steps_taken') or payload.get('step') or '?'} step(s)"
     if event_type == "user_input_requested":
@@ -488,7 +482,6 @@ def _event_body(event: dict) -> str:
                 ("Input Tokens", token_usage.get("input_tokens")),
                 ("Output Tokens", token_usage.get("output_tokens")),
                 ("Total Tokens", token_usage.get("total_tokens")),
-                ("Repair For", payload.get("repair_for")),
             ]
         )
         sections = [
@@ -504,9 +497,6 @@ def _event_body(event: dict) -> str:
             raw_label = "Raw Response"
             if payload.get("status") == "invalid_json_response":
                 raw_label = "Invalid JSON"
-                show_raw = True
-            elif payload.get("status") == "invalid_json_repair":
-                raw_label = "Repair Failed"
                 show_raw = True
             elif response is None:
                 show_raw = True

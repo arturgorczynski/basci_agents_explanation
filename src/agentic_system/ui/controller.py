@@ -165,7 +165,7 @@ class SessionController:
             self.pending_input_kind = kind
             self.pending_prompt = payload.get("prompt")
             self.status = "awaiting_user_input" if kind == "clarification" else "completed_request"
-        elif event_type in {"planner_iteration_start", "delegation_start", "tool_call", "model_call", "model_repair_call", "worker_action", "tool_result", "synthesis_start"}:
+        elif event_type in {"planner_iteration_start", "delegation_start", "tool_call", "model_call", "worker_action", "tool_result", "synthesis_start"}:
             if self.status != "error":
                 self.status = "running"
         elif event_type == "final_answer":

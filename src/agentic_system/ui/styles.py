@@ -441,8 +441,7 @@ html, body, .gradio-container {
   color: var(--good);
 }
 
-.trace-card-chip.status-invalid_json_response,
-.trace-card-chip.status-invalid_json_repair {
+.trace-card-chip.status-invalid_json_response {
   color: var(--warn);
 }
 

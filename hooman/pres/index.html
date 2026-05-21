@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agents Demystified - Interactive AI Deck</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <canvas id="neural-bg" aria-hidden="true"></canvas>
+    <div class="ambient ambient-a" aria-hidden="true"></div>
+    <div class="ambient ambient-b" aria-hidden="true"></div>
+
+    <main class="deck-shell">
+        <header class="topbar">
+            <a class="brand" href="#/0" aria-label="Go to opening slide">
+                <span class="brand-mark"></span>
+                <span>
+                    <strong>Agents Demystified</strong>
+                    <small>runtime, memory, tools, events</small>
+                </span>
+            </a>
+            <nav class="chapter-nav" id="chapter-nav" aria-label="Chapters"></nav>
+            <div class="hud">
+                <span id="slide-counter">01 / 22</span>
+                <span class="status-dot"></span>
+            </div>
+        </header>
+
+        <section class="stage" id="stage" aria-live="polite"></section>
+
+        <footer class="bottombar">
+            <button class="nav-btn" id="prev-btn" type="button" aria-label="Previous slide">Prev</button>
+            <div class="progress-track" aria-hidden="true"><span id="progress-bar"></span></div>
+            <button class="nav-btn primary" id="next-btn" type="button" aria-label="Next slide">Next</button>
+        </footer>
+    </main>
+
+    <script src="data.js"></script>
+    <script src="graphs.js"></script>
+    <script src="interactions.js"></script>
+    <script src="background.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

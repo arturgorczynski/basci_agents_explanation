@@ -1,10 +1,26 @@
-.venv/*
+# Virtual environment
+.venv/
+
+# Secrets
 .env
 
+# Python caches
 __pycache__/
 */__pycache__/*
 *.pyc
+*.egg-info/
 
+# Jupyter
+.ipynb_checkpoints/
+
+# Local tooling / editor / OS junk
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime-generated files
 memory.txt
 src/agentic_system/coding_output/
 src/agentic_system/memory/venv_packages_cache.json

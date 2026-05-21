@@ -21,16 +21,19 @@ CHANGING PROVIDERS
 ------------------
 Copy .env.example to .env and set MODEL_PROVIDER to one of:
 
-  azure   — Azure OpenAI (requires AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT,
-             AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_EMBEDDING)
+  azure       - Azure OpenAI (requires AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT,
+                AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_EMBEDDING)
 
-  openai  — OpenAI (requires OPENAI_API_KEY; optionally set OPENAI_MODEL and
-             OPENAI_EMBEDDING to override defaults)
+  openai      - OpenAI (requires OPENAI_API_KEY; optionally set OPENAI_MODEL and
+                OPENAI_EMBEDDING to override defaults)
 
-  ollama  — Local Ollama (requires Ollama running at OLLAMA_BASE_URL;
-             set OLLAMA_MODEL and OLLAMA_EMBEDDINGS to match your pulled models)
+  ollama      - Local Ollama (requires Ollama running at OLLAMA_BASE_URL;
+                set OLLAMA_MODEL and OLLAMA_EMBEDDINGS to match your pulled models)
+
+  openrouter  - OpenRouter (requires OPENROUTER_API_KEY; set OPENROUTER_MODEL
+                to the model you want to use)
 
 Optional API tool keys (leave blank to disable those tools):
-  POSITIONSTACK_API_KEY  — geolocation
-  NEWSDATA_API_KEY       — news search
-  TAVILY_API_KEY         — web search
+  POSITIONSTACK_API_KEY  - geolocation
+  NEWSDATA_API_KEY       - news search
+  TAVILY_API_KEY         - web search

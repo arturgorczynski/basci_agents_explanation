@@ -1,0 +1,21 @@
+I am about to leave house at Stanisława Staszica 4 Kraków. 
+There is my_wardrobe.json with my clothes. 
+Check these and advise what to wear.
+
+======================================================================
+
+There is housing.csv file I want you to analyse.
+ Based on the analysis prepare two meaningful plots showing data relation to price
+
+ ======================================================================
+
+ Give me some news about LLMs
+
+
+  ======================================================================
+
+  Find me some good oreo cheesecake recipe mate
+
+  =======================================================================
+
+  Prepare for me some nice paper elephant figure and handle it to me please
